@@ -1,4 +1,33 @@
-This is the project repo for the final project of the Udacity Self-Driving Car Nanodegree: Programming a Real Self-Driving Car. For more information about the project, see the project introduction [here](https://classroom.udacity.com/nanodegrees/nd013/parts/6047fe34-d93c-4f50-8336-b70ef10cb4b2/modules/e1a23b06-329a-4684-a717-ad476f0d8dff/lessons/462c933d-9f24-42d3-8bdc-a08a5fc866e4/concepts/5ab4b122-83e6-436d-850f-9f4d26627fd9).
+This is the project repo for the final project of the Udacity Self-Driving Car Nanodegree for team Off-The-Rails: Programming a Real Self-Driving Car. For more information about the project, see the project introduction [here](https://classroom.udacity.com/nanodegrees/nd013/parts/6047fe34-d93c-4f50-8336-b70ef10cb4b2/modules/e1a23b06-329a-4684-a717-ad476f0d8dff/lessons/462c933d-9f24-42d3-8bdc-a08a5fc866e4/concepts/5ab4b122-83e6-436d-850f-9f4d26627fd9).
+
+
+# Team Members
+<dl>
+    <TABLE>
+        <TR>
+            <TD>Name<TD/>
+            <TD>E-Mail<TD/>
+        <TR/>
+        <TR>
+            <TD>Ryan Jonesford<TD/>
+            <TD>ryanjonesford@gmail.com<TD/>
+        <TR/>
+        <TR>
+            <TD>Gulshan Mandhyan<TD/>
+            <TD>gulshan.mandhyan@gmail.com<TD/>
+        <TR/>
+        <TR>
+            <TD>Andrea Panella<TD/>
+            <TD>paneand@gmail.com<TD/>
+        <TR/>
+        <TR>
+            <TD>Zhonghua Qiang<TD/>
+            <TD>aaa6263@sina.com<TD/>
+        <TR/>
+    <TABLE/>
+<dl/>
+
+# Setup
 
 Please use **one** of the two installation options, either native **or** docker installation.
 
@@ -45,7 +74,7 @@ git clone https://github.com/udacity/CarND-Capstone.git
 2. Install python dependencies
 ```bash
 cd CarND-Capstone
-pip install -r requirements.txt
+pip install -r requirements.txt --ignore-installed --user
 ```
 3. Make and run styx
 ```bash
