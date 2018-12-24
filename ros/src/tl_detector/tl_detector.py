@@ -70,7 +70,9 @@ class TLDetector(object):
         self.skipper = 1
         self.using_classifier = False
         self.light_dict = { TrafficLight.RED: "RED",
-                            TrafficLight.UNKNOWN: "OTHER"}
+                            TrafficLight.UNKNOWN: "OTHER",
+                            TrafficLight.GREEN: "GREEN",	
+			    TrafficLight.YELLOW: "YELLOW"}
 
         #########################################################
         ########## ON SITE DETECTOR + CLASSIFIER SETUP ##########
@@ -81,7 +83,7 @@ class TLDetector(object):
             model = load_model(self.config['tl']['tl_classification_model'])
             resize_width = self.config['tl']['classifier_resize_width']
             resize_height = self.config['tl']['classifier_resize_height']
-            self.light_classifier.setup_classifier(model, resize_width, resize_height)
+            self.light_classifier.setup_site_classifier(model, resize_width, resize_height)
             self.invalid_class_number = 3
 
             #Detector setup
@@ -194,13 +196,10 @@ class TLDetector(object):
         if self.config['is_site']:
             cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, self.color_mode)
             tl_image = self.detect_traffic_light(cv_image)
+	    light_state = TrafficLight.UNKNOWN
             if tl_image is not None:
-                state = self.light_classifier.get_site_classification(tl_image)
-                state = state if (state != self.invalid_class_number) else TrafficLight.UNKNOWN
-                rospy.loginfo("[TL_DETECTOR] Nearest TL-state is: %s", state)
-                rospy.loginfo("[TL_DETECTOR] RED TL-state is: %s", TrafficLight.RED)
-                rospy.loginfo("[TL_DETECTOR] YELLOW TL-state is: %s", TrafficLight.YELLOW)
-                rospy.loginfo("[TL_DETECTOR] GREEN TL-state is: %s", TrafficLight.GREEN)
+                light_state = self.light_classifier.get_site_classification(tl_image)
+                light_state = light_state if (light_state != self.invalid_class_number) else TrafficLight.UNKNOWN
         else:
             # use rgb8 instead of bgr8 for detect
             cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")
@@ -248,7 +247,7 @@ class TLDetector(object):
         if self.is_carla:
             mean = np.mean(resize_image) # mean for data centering
             std = np.std(resize_image) # std for data normalization
-
+	    resize_image = np.array(resize_image,dtype=np.float64)
             resize_image -= mean
             resize_image /= std
 
