@@ -4,6 +4,7 @@ from std_msgs.msg import Int32
 from geometry_msgs.msg import PoseStamped, Pose
 from styx_msgs.msg import TrafficLightArray, TrafficLight
 from styx_msgs.msg import Lane
+from std_msgs.msg import Header
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from light_classification.tl_classifier import TLClassifier
@@ -19,6 +20,25 @@ STATE_COUNT_THRESHOLD = 4
 SITE_STATE_COUNT_TRESHOLD = 1 
 NO_WP = -1
 SKIP_VAL = 0
+MIN_OBJECT_AREA = 5
+MAX_OBJECT_AREA = 5000
+
+##################################################
+
+SMOOTH = 1.
+
+
+def dice_coef(y_true, y_pred):
+    y_true_f = K.flatten(y_true)
+    y_pred_f = K.flatten(y_pred)
+    intersection = K.sum(y_true_f * y_pred_f)
+    return (2. * intersection + SMOOTH) / (K.sum(y_true_f) + K.sum(y_pred_f) + SMOOTH)
+
+def dice_coef_loss(y_true, y_pred):
+    return -dice_coef(y_true, y_pred)
+
+##################################################
+
 
 
 ##################################################
@@ -72,14 +92,15 @@ class TLDetector(object):
         self.light_dict = { TrafficLight.RED: "RED",
                             TrafficLight.UNKNOWN: "OTHER",
                             TrafficLight.GREEN: "GREEN",	
-			    TrafficLight.YELLOW: "YELLOW"}
+                            TrafficLight.YELLOW: "YELLOW"}
 
         #########################################################
         ########## ON SITE DETECTOR + CLASSIFIER SETUP ##########
         #########################################################
         
-        if self.config['is_site']:
-
+        if not self.config['is_site']:
+            pass
+        else:
             model = load_model(self.config['tl']['tl_classification_model'])
             resize_width = self.config['tl']['classifier_resize_width']
             resize_height = self.config['tl']['classifier_resize_height']
@@ -104,6 +125,7 @@ class TLDetector(object):
 
         # setup publisher
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
+        self.modded_img = rospy.Publisher('/mod_img', Image, queue_size=0)
         
         # Setup subscriptions
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
@@ -134,9 +156,10 @@ class TLDetector(object):
             msg (Image): image from car-mounted camera
 
         """
-        state_th = STATE_COUNT_THRESHOLD
-        if self.config['is_site']:
-            state_th = SITE_STATE_COUNT_TRESHOLD
+        
+        state_th = SITE_STATE_COUNT_TRESHOLD
+        if not self.config['is_site']:
+            state_th = STATE_COUNT_THRESHOLD
 
         self.using_classifier = True
         if SKIP_VAL > 1:
@@ -181,6 +204,92 @@ class TLDetector(object):
             
         return self.waypoint_ktree.query([x,y],1)[1]
 
+    def cv_bbox(self, img, orig, min_area=MIN_OBJECT_AREA, max_area=MAX_OBJECT_AREA):
+        # list that we are returning
+        boxes = []
+        areas = []
+        # find contours of filtered image using openCV findContours function
+        _, contours, hierarchy = cv2.findContours( img.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # use moments method to find our filtered object
+        # if number of objects greater than MAX_NUM_OBJECTS we have a noisy filter
+        for contour in contours:
+            x,y,w,h = cv2.boundingRect(contour)
+
+            area = w*h
+            if area > min_area and area < max_area:
+                bbox=[(int(x),int(y)),(int(x+w),int(y+h*3))]
+                boxes.append(bbox)
+                areas.append(area)
+        imgs = []
+        for ba in zip(boxes,areas):
+            crop_img = orig[ba[0][0][1]:ba[0][1][1], ba[0][0][0]:ba[0][1][0]]
+            imgs.append(crop_img)
+        return imgs
+
+    def mod(self, img):
+        """ returns best guess of traffic lights """
+        # Initialize to check if HSV min_area/max_area value changes
+        min_max_vals = [[80, 90, 90],
+                    [80, 80, 80],
+                    [80, 90, 90],
+                    [160, 180, 200],
+                    [200, 180, 180],
+                    [254, 254, 254]]
+        HSV = 0
+        LAB = 1
+        YCrCb = 2
+        hMin = min_max_vals[0][HSV]
+        sMin = min_max_vals[1][HSV]
+        vMin = min_max_vals[2][HSV]
+        hMax = min_max_vals[3][HSV]
+        sMax = min_max_vals[4][HSV]
+        vMax = min_max_vals[5][HSV]
+
+        lMin = min_max_vals[0][LAB]
+        aMin = min_max_vals[1][LAB]
+        bMin = min_max_vals[2][LAB]
+        lMax = min_max_vals[3][LAB]
+        aMax = min_max_vals[4][LAB]
+        bMax = min_max_vals[5][LAB]
+
+        yMin = min_max_vals[0][YCrCb]
+        crMin = min_max_vals[1][YCrCb]
+        cbMin = min_max_vals[2][YCrCb]
+        yMax = min_max_vals[3][YCrCb]
+        crMax = min_max_vals[4][YCrCb]
+        cbMax = min_max_vals[5][YCrCb]
+        ksize = pksize = 3
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
+
+        hsvlower = np.array([hMin, sMin, vMin])
+        hsvupper = np.array([hMax, sMax, vMax])
+
+        lablower = np.array([lMin, aMin, bMin])
+        labupper = np.array([lMax, aMax, bMax])
+
+        ycrcblower = np.array([yMin, crMin, cbMin])
+        ycrcbupper = np.array([yMax, crMax, cbMax])
+
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+
+        mask = cv2.inRange(hsv, hsvlower, hsvupper)
+        hsv[0:int(hsv.shape[0]*.15),0:-1] = 0
+        hsv[int(hsv.shape[0]*.75):-1,0:-1] = 0
+        hsv[0:-1,0:int(hsv.shape[1]*.05)] = 0
+        hsv[0:-1,int(hsv.shape[1]*.95):-1] = 0
+        labMask= cv2.inRange(lab, lablower, labupper)
+        ycrcbMask= cv2.inRange(ycrcb, ycrcblower, ycrcbupper)
+        mask = mask * labMask * ycrcbMask
+        cv2.bitwise_and(labMask,labMask, mask)
+        cv2.bitwise_and(mask,ycrcbMask, mask)
+        mask_e = cv2.erode(mask, kernel, iterations=1)
+        output = cv2.dilate(mask_e, kernel, iterations=1)
+        img_area = img.shape[0] * img.shape[1]
+
+        return self.cv_bbox(output, img, int(img_area*.001), int(img_area)*.01)
+    
     def get_light_state(self, light):
         """Determines the current color of the traffic light
 
@@ -192,19 +301,19 @@ class TLDetector(object):
 
         """
 
-
-        if self.config['is_site']:
-            cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, self.color_mode)
-            tl_image = self.detect_traffic_light(cv_image)
-	    light_state = TrafficLight.UNKNOWN
-            if tl_image is not None:
-                light_state = self.light_classifier.get_site_classification(tl_image)
-                light_state = light_state if (light_state != self.invalid_class_number) else TrafficLight.UNKNOWN
-        else:
+        light_state = TrafficLight.UNKNOWN
+        if not self.config['is_site']:
             # use rgb8 instead of bgr8 for detect
             cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")
             #Get classification
             light_state = self.light_classifier.get_classification(cv_image)
+        else:
+            cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, self.color_mode)
+            maybe_tls = self.mod(cv_image)
+            while maybe_tls != [] and light_state == TrafficLight.UNKNOWN:
+                light_state = self.light_classifier.get_site_classification(maybe_tls.pop())
+                light_state = light_state if (light_state != self.invalid_class_number) else TrafficLight.UNKNOWN
+        
 
         return light_state
 
@@ -247,7 +356,7 @@ class TLDetector(object):
         if self.is_carla:
             mean = np.mean(resize_image) # mean for data centering
             std = np.std(resize_image) # std for data normalization
-	    resize_image = np.array(resize_image,dtype=np.float64)
+            resize_image = np.array(resize_image,dtype=np.float64)
             resize_image -= mean
             resize_image /= std
 
