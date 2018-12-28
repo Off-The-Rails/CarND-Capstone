@@ -17,7 +17,7 @@ from keras.models import load_model
 import numpy as np
 
 STATE_COUNT_THRESHOLD = 4
-SITE_STATE_COUNT_TRESHOLD = 4 
+SITE_STATE_COUNT_TRESHOLD = 1 
 NO_WP = -1
 SKIP_VAL = 0
 MIN_OBJECT_AREA = 5
@@ -36,6 +36,26 @@ def dice_coef(y_true, y_pred):
 
 def dice_coef_loss(y_true, y_pred):
     return -dice_coef(y_true, y_pred)
+
+##################################################
+
+
+
+##################################################
+
+SMOOTH = 1.
+
+
+def dice_coef(y_true, y_pred):
+    y_true_f = K.flatten(y_true)
+    y_pred_f = K.flatten(y_pred)
+    intersection = K.sum(y_true_f * y_pred_f)
+    return (2. * intersection + SMOOTH) / (K.sum(y_true_f) + K.sum(y_pred_f) + SMOOTH)
+
+def dice_coef_loss(y_true, y_pred):
+    return -dice_coef(y_true, y_pred)
+
+
 
 ##################################################
 
